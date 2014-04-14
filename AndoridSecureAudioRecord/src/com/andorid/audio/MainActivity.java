@@ -1,24 +1,10 @@
 package com.andorid.audio;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.security.GeneralSecurityException;
 
-import android.media.AudioFormat;
-import android.media.AudioManager;
-import android.media.AudioRecord;
-import android.media.AudioTrack;
-import android.media.MediaRecorder;
 import android.os.Bundle;
-import android.os.Environment;
+import android.os.Handler;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.ActionBarActivity;
 import android.view.LayoutInflater;
@@ -28,18 +14,21 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.Toast;
 
-import com.andorid.andoridsecureaudiorecord.R;
+import com.example.andoridsecureaudiorecord.R;
 
 public class MainActivity extends ActionBarActivity {
 	Button startRec, stopRec, playBack;
     Boolean recording;
     
+	private PcmAudioRecorder par;
+    
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
-
+		
         startRec = (Button)findViewById(R.id.startrec);
         stopRec = (Button)findViewById(R.id.stoprec);
         playBack = (Button)findViewById(R.id.playback);
@@ -47,122 +36,74 @@ public class MainActivity extends ActionBarActivity {
         startRec.setOnClickListener(startRecOnClickListener);
         stopRec.setOnClickListener(stopRecOnClickListener);
         playBack.setOnClickListener(playBackOnClickListener);
+        
+        enableButtons(false);
 	}
-
+	
+	private void enableButtons(boolean isRecording) {
+		enableButton(R.id.startrec, !isRecording);
+		enableButton(R.id.stoprec, isRecording);
+	}
+	
+	private void enableButton(int id, boolean isEnable) {
+		((Button) findViewById(id)).setEnabled(isEnable);
+	}
+	
 	OnClickListener startRecOnClickListener   = new OnClickListener() {
-          @Override
-          public void onClick(View arg0) {
-        	  Thread recordThread = new Thread(new Runnable() {
-        		  @Override
-        		  public void run()
-        		  {
-			            recording = true;
-			            startRecord();
-			      }
+		@Override
+	    public void onClick(View arg0) {
+			enableButton(R.id.startrec, false);
+			Handler handler = new Handler(); 
+			par = PcmAudioRecorder.getInstanse();
+			
+			Thread recordThread = new Thread(new Runnable() {
+				@Override
+				public void run() {
+					Toast.makeText(MainActivity.this,
+							"Inizio registrazione", Toast.LENGTH_SHORT).show();
+					recording = true;
+					par.prepare();
+					par.start();
+				}
 			
 			});
-			
-			recordThread.start();
-          }
+			handler.postDelayed(recordThread, 100);
+			enableButtons(true);
+			enableButton(R.id.playback, false);
+		}
 	};
 
 	OnClickListener stopRecOnClickListener = new OnClickListener() {
 		@Override
 		public void onClick(View arg0) {
 			recording = false;
+			enableButtons(false);
+			par.stop();
+			par.release();
+			enableButton(R.id.playback, true);
 		}
 	};
 
-	OnClickListener playBackOnClickListener   = new OnClickListener() {
-	
+	OnClickListener playBackOnClickListener = new OnClickListener() {
 		@Override
 		public void onClick(View v) {
-			playRecord();
+			Thread playRecordThread = new Thread(new Runnable() {
+		  		  @Override
+		  		  public void run() {
+		  			  try {
+						par.playRecord();
+					} catch (IllegalStateException | GeneralSecurityException
+							| IOException | ClassNotFoundException e) {
+						e.printStackTrace();
+					}
+			      }
+			});
+			Toast.makeText(MainActivity.this,
+					"Inizio riproduzione", Toast.LENGTH_SHORT).show();
+			playRecordThread.start();
 		}
-	
 	};
 
-	private void startRecord() { 
-		File file = new File(Environment.getExternalStorageDirectory(), "test.pcm");
-
-		try {
-			file.createNewFile();
-			
-			OutputStream outputStream = new FileOutputStream(file);
-			BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(outputStream);
-			DataOutputStream dataOutputStream = new DataOutputStream(bufferedOutputStream);
-			
-			int minBufferSize = AudioRecord.getMinBufferSize(11025,
-			            AudioFormat.CHANNEL_CONFIGURATION_MONO,
-			            AudioFormat.ENCODING_PCM_16BIT);
-			
-			short[] audioData = new short[minBufferSize];
-			
-			AudioRecord audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
-			            11025,
-			            AudioFormat.CHANNEL_CONFIGURATION_MONO,
-			            AudioFormat.ENCODING_PCM_16BIT,
-			            minBufferSize);
-
-            audioRecord.startRecording();
-
-            while(recording) {
-            	int numberOfShort = audioRecord.read(audioData, 0, minBufferSize);
-            	for(int i = 0; i < numberOfShort; i++) {
-            		dataOutputStream.writeShort(audioData[i]);
-            	}
-        	}
-            audioRecord.stop();
-            dataOutputStream.close();
-        } catch (IOException e) {
-        	e.printStackTrace();
-		}
-	}
-
-void playRecord()
-{
-      File file = new File(Environment.getExternalStorageDirectory(), "test.pcm");
-
-      int shortSizeInBytes = Short.SIZE/Byte.SIZE;
-
-      int bufferSizeInBytes = (int)(file.length()/shortSizeInBytes);
-      short[] audioData = new short[bufferSizeInBytes];
-
-      try {
-            InputStream inputStream = new FileInputStream(file);
-            BufferedInputStream bufferedInputStream = new BufferedInputStream(inputStream);
-            DataInputStream dataInputStream = new DataInputStream(bufferedInputStream);
-
-            int i = 0;
-            while(dataInputStream.available() > 0)
-            {
-                  audioData[i] = dataInputStream.readShort();
-                  i++;
-            }
-
-            dataInputStream.close();
-
-            AudioTrack audioTrack = new AudioTrack(
-                        AudioManager.STREAM_MUSIC,
-                        11025,
-                        AudioFormat.CHANNEL_CONFIGURATION_MONO,
-                        AudioFormat.ENCODING_PCM_16BIT,
-                        bufferSizeInBytes,
-                        AudioTrack.MODE_STREAM);
-
-            audioTrack.play();
-            audioTrack.write(audioData, 0, bufferSizeInBytes);
-
-
-      } catch (FileNotFoundException e)
-      {
-            e.printStackTrace();
-      } catch (IOException e)
-      {
-            e.printStackTrace();
-      }
-} 
-	
 	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
 

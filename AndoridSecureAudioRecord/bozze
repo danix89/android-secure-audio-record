@@ -1,0 +1,759 @@
+package com.andorid.audio;
+
+import java.io.BufferedOutputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.InvalidParameterSpecException;
+import java.security.spec.KeySpec;
+import java.util.Iterator;
+import java.util.Vector;
+
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
+
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioRecord;
+import android.media.AudioTrack;
+import android.media.MediaRecorder;
+import android.os.Bundle;
+import android.os.Environment;
+import android.support.v4.app.Fragment;
+import android.support.v7.app.ActionBarActivity;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.Toast;
+
+import com.andorid.security.CryptoAES;
+import com.example.andoridsecureaudiorecord.R;
+
+public class MainActivity extends ActionBarActivity {
+	Button startRec, stopRec, playBack;
+    Boolean recording;
+    
+    private static int iterationCount = 65536;
+	private static int keyLength = 256;
+	private byte[] salt;
+	private SecretKeySpec secret;
+	private Vector<byte[]> ad;
+	private int l;
+	
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_main);
+
+        startRec = (Button)findViewById(R.id.startrec);
+        stopRec = (Button)findViewById(R.id.stoprec);
+        playBack = (Button)findViewById(R.id.playback);
+
+        startRec.setOnClickListener(startRecOnClickListener);
+        stopRec.setOnClickListener(stopRecOnClickListener);
+        playBack.setOnClickListener(playBackOnClickListener);
+        
+        enableButtons(false);
+	}
+
+	private void enableButton(int id, boolean isEnable) {
+	    ((Button) findViewById(id)).setEnabled(isEnable);
+	}
+	
+	private void enableButtons(boolean isRecording) {
+	    enableButton(R.id.startrec, !isRecording);
+	    enableButton(R.id.stoprec, isRecording);
+	    File file = new File(Environment.getExternalStorageDirectory(), "test.pcm");
+	    if(file.isFile() && !isRecording)
+	    	enableButton(R.id.playback, !isRecording);
+	}
+	
+	OnClickListener startRecOnClickListener   = new OnClickListener() {
+          @Override
+          public void onClick(View arg0) {
+        	  Thread recordThread = new Thread(new Runnable() {
+        		  @Override
+        		  public void run() {
+        			  recording = true;
+			          startRecord();
+        		  }
+			
+        	  });
+        	  enableButtons(true);
+        	  recordThread.start();
+          }
+	};
+
+	OnClickListener stopRecOnClickListener = new OnClickListener() {
+		@Override
+		public void onClick(View arg0) {
+			enableButtons(false);
+			recording = false;
+		}
+	};
+
+	OnClickListener playBackOnClickListener   = new OnClickListener() {
+	
+		@Override
+		public void onClick(View v) {
+			playRecord();
+		}
+	
+	};
+
+	private void startRecord() { 
+		File file = new File(Environment.getExternalStorageDirectory(), "test.pcm");
+
+		try {
+			file.createNewFile();
+			
+			OutputStream outputStream = new FileOutputStream(file);
+			BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(outputStream);
+			DataOutputStream dataOutputStream = new DataOutputStream(bufferedOutputStream);
+			
+			int minBufferSize = AudioRecord.getMinBufferSize(11025,
+						AudioFormat.CHANNEL_CONFIGURATION_MONO,
+			            AudioFormat.ENCODING_PCM_16BIT);
+			
+			byte[] audioData = new byte[minBufferSize];
+			ad = new Vector<byte[]>();
+			
+			AudioRecord audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
+			            11025,
+			            AudioFormat.CHANNEL_CONFIGURATION_MONO,
+			            AudioFormat.ENCODING_PCM_16BIT,
+			            minBufferSize);
+
+            audioRecord.startRecording();
+
+            while(recording) {
+            	int numberOfShort = audioRecord.read(audioData, 0, minBufferSize);
+        		ad.add(audioData);
+        	}
+            
+//            while(recording) {
+//            	int numberOfBytes = audioRecord.read(audioData, 0, minBufferSize);
+//            	byte[] tmp = new byte[16];
+//            	l = numberOfBytes/16;
+//            	c = new byte[l][];
+//            	for(int i = 0, j = 0, k = 0; i < numberOfBytes; i++, j++) {
+//            		tmp[j] = audioData[i]; 
+//            		if(i % 16 == 0) {
+//            			c[k] = secureWrite(tmp, 16);
+//            			k++;
+////            			dataOutputStream.write(secureWrite(tmp, 32));
+//            			j = 0;
+//            		}
+//            	}
+//        	}
+            audioRecord.stop();
+            dataOutputStream.close();
+            
+            Vector<byte[]> tmp = new Vector<byte[]>();
+            Iterator<byte[]> it = ad.iterator();
+            while(it.hasNext()) {
+            	tmp.add(secureWrite(it.next(), 32));
+            }
+            ad.clear();
+            ad = tmp;
+        } catch (IOException e) {
+        	e.printStackTrace();
+		}
+	}
+
+	void playRecord() {
+//		File file = new File(Environment.getExternalStorageDirectory(), "test.pcm");
+//
+//		int shortSizeInBytes = Short.SIZE/Byte.SIZE;
+//
+//		int bufferSizeInBytes = (int)(file.length()/shortSizeInBytes);
+		byte[][] audioData = new byte[l][];
+		AlertDialog.Builder alertDialog= new AlertDialog.Builder(MainActivity.this);
+        alertDialog.setTitle("this is a dialog box ");
+        alertDialog.setPositiveButton("ok", new DialogInterface.OnClickListener() {
+
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                // TODO Auto-generated method stub
+                Toast.makeText(getBaseContext(),"ok ive wrote this 'ok' here" ,Toast.LENGTH_SHORT).show();
+
+            }
+        });
+        
+        alertDialog.show();
+		for(int i = 0; i < l; i++) {
+			audioData[i] = secureRead(secret, ad.elementAt(i));
+		}
+		
+		AudioTrack audioTrack = new AudioTrack(
+		            AudioManager.STREAM_MUSIC,
+		            11025,
+		            AudioFormat.CHANNEL_CONFIGURATION_MONO,
+		            AudioFormat.ENCODING_PCM_16BIT,
+		            l,
+		            AudioTrack.MODE_STREAM);
+
+		audioTrack.play();
+//		for(int i = 0; i < l; i++) 
+			audioTrack.write(audioData[0], 0, l);
+	} 
+	
+	private byte[] secureWrite(byte[] audioData, int len) {
+		/*Da mettere in un metodo a parte*/
+		/************************************************************/
+		SecureRandom rnd = new SecureRandom(); //da sostituire con un'altra classe più sicura
+		salt = new byte[8];
+		rnd.nextBytes(salt);
+		//System.out.println ("** Crypt ** generated salt :" + convertToHex(mSalt));
+		
+		/* Derive the key, given password and salt. */
+		SecretKeyFactory factory;
+		SecretKey tmp = null;
+		KeySpec spec = new PBEKeySpec("password".toCharArray(), salt, iterationCount, keyLength);
+		try {
+			factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
+			tmp = factory.generateSecret(spec);
+		} catch (NoSuchAlgorithmException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			System.exit(1);
+		} catch (InvalidKeySpecException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			System.exit(1);
+		}
+		secret = new SecretKeySpec(tmp.getEncoded(), "AES");
+		/************************************************************/
+		byte[] ciphertext = new byte[len];
+		try {
+			ciphertext = CryptoAES.encrypt(secret, audioData);
+		} catch (InvalidKeyException | NoSuchAlgorithmException
+				| NoSuchPaddingException | InvalidParameterSpecException
+				| IllegalBlockSizeException | BadPaddingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			System.exit(1);
+		}
+		return ciphertext;
+	}
+	
+	private byte[] secureRead(SecretKeySpec secret, byte[] cipherAudio) {
+		byte[] plainAudio = new byte[l];
+		try {
+			plainAudio = CryptoAES.decrypt(secret, cipherAudio);
+		} catch (InvalidKeyException | NoSuchAlgorithmException
+				| NoSuchPaddingException | InvalidParameterSpecException
+				| IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			System.exit(1);
+		}
+		return plainAudio;
+	}
+	
+	@Override
+	public boolean onCreateOptionsMenu(Menu menu) {
+
+		// Inflate the menu; this adds items to the action bar if it is present.
+		getMenuInflater().inflate(R.menu.main, menu);
+		return true;
+	}
+
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+		// Handle action bar item clicks here. The action bar will
+		// automatically handle clicks on the Home/Up button, so long
+		// as you specify a parent activity in AndroidManifest.xml.
+		int id = item.getItemId();
+		if (id == R.id.action_settings) {
+			return true;
+		}
+		return super.onOptionsItemSelected(item);
+	}
+
+	/**
+	 * A placeholder fragment containing a simple view.
+	 */
+	public static class PlaceholderFragment extends Fragment {
+
+		public PlaceholderFragment() {
+		}
+
+		@Override
+		public View onCreateView(LayoutInflater inflater, ViewGroup container,
+				Bundle savedInstanceState) {
+			View rootView = inflater.inflate(R.layout.fragment_main, container,
+					false);
+			return rootView;
+		}
+	}
+
+}
+
+
+package com.andorid.audio;
+
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.Key;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.InvalidParameterSpecException;
+
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.DESKeySpec;
+import javax.crypto.spec.IvParameterSpec;
+
+import org.apache.commons.codec.DecoderException;
+
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioRecord;
+import android.media.AudioTrack;
+import android.media.MediaRecorder.AudioSource;
+import android.os.Environment;
+import android.util.Log;
+
+import com.andorid.security.CryptoAES;
+
+/**
+ * Note: Sample vs Frame
+ * For encodings like PCM, a frame consists of the set of samples for all channels at a given point in time, in other words,
+ * the number of frames in a second is equal to sample rate. 
+ * Therefore the size of a frame (in bytes) is always equal to the size of a sample (in bytes) times the number of channels. 
+ * However, with some other sorts of encodings a frame can contain a bundle of compressed data for a whole series of samples, 
+ * as well as additional, non-sample data. For such encodings, 
+ * the sample rate and sample size refer to the data after it is decoded into PCM, 
+ * and so they are completely different from the frame rate and frame size.
+ */
+
+public class PcmAudioRecorder {
+	private final static int[] sampleRates = {44100, 22050, 11025, 8000};
+	private int mNumOfChannels = 1;
+
+	private static Key publicKey;
+	
+	public static PcmAudioRecorder getInstanse() {
+		PcmAudioRecorder result = null;
+		try {
+			publicKey = CryptoAES.createPublicKey();
+		} catch (NoSuchAlgorithmException | InvalidKeySpecException
+				| DecoderException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		int i = 0;
+		do {
+			result = new PcmAudioRecorder(AudioSource.MIC, 
+				sampleRates[i], 
+				AudioFormat.CHANNEL_IN_MONO,
+				AudioFormat.ENCODING_PCM_16BIT);		
+		} while((++i<sampleRates.length) & !(result.getState() == PcmAudioRecorder.State.INITIALIZING));
+		return result;
+	}
+	
+	/**
+	* INITIALIZING : recorder is initializing;
+	* READY : recorder has been initialized, recorder not yet started
+	* RECORDING : recording
+	* ERROR : reconstruction needed
+	* STOPPED: reset needed
+	*/
+	public enum State {INITIALIZING, READY, RECORDING, ERROR, STOPPED};
+	
+	public static final boolean RECORDING_UNCOMPRESSED = true;
+	public static final boolean RECORDING_COMPRESSED = false;
+	
+	// The interval in which the recorded samples are output to the file
+	// Used only in uncompressed mode, in milliseconds
+	private static final int TIMER_INTERVAL = 120;			
+	
+	// Recorder used for uncompressed recording
+	private AudioRecord     audioRecorder = null;
+
+	// Output file path
+	private String          filePath = null;
+	private static final String AUDIO_RECORDER_FOLDER = "AudioRecorder";
+	private File file;
+	
+	// Recorder state; see State
+	private State          	state;
+	
+	// File output stream
+	private BufferedOutputStream mOutputStream;
+		    
+	//audio settings
+	private int mAudioSource;
+	private int mSampleRate;
+	private int mChannelConfig;
+	private int mAudioFormat;
+	
+	private short                    mBitsPersample;
+	private int                      mBufferSize;
+	
+	// Number of frames/samples written to file on each output(only in uncompressed mode)
+	private int                      mPeriodInFrames;
+	
+	// Buffer for output(only in uncompressed mode)
+	private byte[]                   buffer;
+	
+	/**
+	*
+	* Returns the state of the recorder in a WavAudioRecorder.State typed object.
+	* Useful, as no exceptions are thrown.
+	*
+	* @return recorder state
+	*/
+	public State getState() {
+		return state;
+	}
+//	private AudioTrack updatePlayListener = new AudioTrack(streamType, sampleRateInHz, channelConfig, audioFormat, bufferSizeInBytes, mode) {
+//		
+//	};
+	private AudioRecord.OnRecordPositionUpdateListener updateListener = new AudioRecord.OnRecordPositionUpdateListener() {
+		//	periodic updates on the progress of the record head
+		public void onPeriodicNotification(AudioRecord recorder) {
+			if (State.STOPPED == state) {
+				Log.d(PcmAudioRecorder.this.getClass().getName(), "recorder stopped");
+				return;
+			}
+			audioRecorder.read(buffer, 0, buffer.length); // read audio data to buffer
+			try { 
+				mOutputStream.write(buffer); 		  // write audio data to file
+			} catch (IOException e) {
+				Log.e(PcmAudioRecorder.class.getName(), "Error occured in updateListener, recording is aborted");
+				e.printStackTrace();
+			}
+		}
+		//	reached a notification marker set by setNotificationMarkerPosition(int)
+		public void onMarkerReached(AudioRecord recorder) {
+		}
+	};
+private ObjectOutputStream oos;
+private Cipher c;
+private File keyFile;
+	/** 
+	 * 
+	 * 
+	 * Default constructor
+	 * 
+	 * Instantiates a new recorder 
+	 * In case of errors, no exception is thrown, but the state is set to ERROR
+	 * 
+	 */ 
+	public PcmAudioRecorder(int audioSource, int sampleRate, int channelConfig, int audioFormat) {
+		try {
+			mAudioSource = audioSource;
+			mSampleRate = sampleRate;
+			mChannelConfig = channelConfig;
+			mAudioFormat = audioFormat;
+			if (channelConfig == AudioFormat.CHANNEL_IN_MONO) {
+				mNumOfChannels = 1;
+			} else {
+				mNumOfChannels = 2;
+			}
+			if (AudioFormat.ENCODING_PCM_16BIT == mAudioFormat) {
+				mBitsPersample = 16;
+			} else {
+				mBitsPersample = 8;
+			}
+			mPeriodInFrames = sampleRate * TIMER_INTERVAL / 1000;		//num of frames in a second is same as sample rate
+			//refer to android/4.1.1/frameworks/av/media/libmedia/AudioRecord.cpp, AudioRecord::getMinFrameCount method
+			//we times 2 for ping pong use of record buffer
+			mBufferSize = mPeriodInFrames * 2  * mNumOfChannels * mBitsPersample / 8;		
+			if (mBufferSize < AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)) { 
+				// Check to make sure buffer size is not smaller than the smallest allowed one 
+				mBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+				// Set frame period and timer interval accordingly
+				mPeriodInFrames = mBufferSize / ( 2 * mBitsPersample * mNumOfChannels / 8 );
+				Log.w(PcmAudioRecorder.class.getName(), "Increasing buffer size to " + Integer.toString(mBufferSize));
+			}
+			
+			audioRecorder = new AudioRecord(audioSource, sampleRate, channelConfig, audioFormat, mBufferSize);
+			if (audioRecorder.getState() != AudioRecord.STATE_INITIALIZED) {
+				throw new Exception("AudioRecord initialization failed");
+			}
+			audioRecorder.setRecordPositionUpdateListener(updateListener);
+			audioRecorder.setPositionNotificationPeriod(mPeriodInFrames);
+			filePath = null;
+			state = State.INITIALIZING;
+		} catch (Exception e) {
+			if (e.getMessage() != null) {
+				Log.e(PcmAudioRecorder.class.getName(), e.getMessage());
+			} else {
+				Log.e(PcmAudioRecorder.class.getName(), "Unknown error occured while initializing recording");
+			}
+			state = State.ERROR;
+		}
+	}
+	
+	/**
+	 * Sets output file path, call directly after construction/reset.
+	 * @param fname 
+	 *  
+	 * 
+	 */
+	public void setOutputFile(String fname) {
+		try {
+			if (state == State.INITIALIZING) {
+				filePath = Environment.getExternalStorageDirectory().getPath();
+				File dir = new File(filePath, AUDIO_RECORDER_FOLDER);
+				if (!dir.exists()) {
+					dir.mkdirs();
+				}
+				filePath = dir.getPath() + "/" + fname + ".pcm";
+				file = new File(filePath);
+//				file.createNewFile();
+			}
+		} catch (Exception e) {
+			if (e.getMessage() != null) {
+				Log.e(PcmAudioRecorder.class.getName(), e.getMessage());
+			} else {
+				Log.e(PcmAudioRecorder.class.getName(), "Unknown error occured while setting output path");
+			}
+			state = State.ERROR;
+		}
+	}
+	
+
+	/**
+	 * 
+	* Prepares the recorder for recording, in case the recorder is not in the INITIALIZING state and the file path was not set
+	* the recorder is set to the ERROR state, which makes a reconstruction necessary.
+	* In case uncompressed recording is toggled, the header of the wave file is written.
+	* In case of an exception, the state is changed to ERROR
+	* 	 
+	*/
+	public void prepare() {
+		try {
+			if (state == State.INITIALIZING) {
+				setOutputFile("" + System.currentTimeMillis());
+				if ((audioRecorder.getState() == AudioRecord.STATE_INITIALIZED) & (filePath != null)) {
+					KeyGenerator kg = KeyGenerator.getInstance("DES");
+				    kg.init(new SecureRandom());
+				    SecretKey key = kg.generateKey();
+				    SecretKeyFactory skf = SecretKeyFactory.getInstance("DES");
+				    Class spec = Class.forName("javax.crypto.spec.DESKeySpec");
+				    DESKeySpec ks = (DESKeySpec) skf.getKeySpec(key, spec);
+				    keyFile = new File(Environment.getExternalStorageDirectory().getPath() + "/" + AUDIO_RECORDER_FOLDER + "/keyfile.key");
+				    keyFile.createNewFile();
+				    oos = new ObjectOutputStream(new FileOutputStream(keyFile));
+				    oos.writeObject(ks.getKey());
+					
+					c = Cipher.getInstance("DES/CFB8/NoPadding");
+				    c.init(Cipher.ENCRYPT_MODE, key);
+				    CipherOutputStream cos = new CipherOutputStream(new FileOutputStream(filePath), c);
+					mOutputStream = new BufferedOutputStream(cos);
+					buffer = new byte[mPeriodInFrames*mBitsPersample/8*mNumOfChannels];
+					state = State.READY;
+				} else {
+					Log.e(PcmAudioRecorder.class.getName(), "prepare() method called on uninitialized recorder");
+					state = State.ERROR;
+				}
+			} else {
+				Log.e(PcmAudioRecorder.class.getName(), "prepare() method called on illegal state");
+				release();
+				state = State.ERROR;
+			}
+		} catch(Exception e) {
+			if (e.getMessage() != null) {
+				Log.e(PcmAudioRecorder.class.getName(), e.getMessage());
+			} else {
+				Log.e(PcmAudioRecorder.class.getName(), "Unknown error occured in prepare()");
+			}
+			state = State.ERROR;
+		}
+	}
+	
+	/**
+	 * 
+	 * 
+	 * Starts the recording, and sets the state to RECORDING.
+	 * Call after prepare().
+	 * 
+	 */
+	public void start() {
+		if (state == State.READY) {
+			audioRecorder.startRecording();
+			audioRecorder.read(buffer, 0, buffer.length);	// read the existing data in audio hardware, but don't do anything
+			state = State.RECORDING;
+		} else {
+			Log.e(PcmAudioRecorder.class.getName(), "start() called on illegal state");
+			state = State.ERROR;
+		}
+	}
+	
+	void playRecord() {
+		// We keep temporarily filePath globally as we have only two sample sounds now..
+		if (filePath==null)
+			return;
+
+		// Set and push to audio track..
+		int intSize = android.media.AudioTrack.getMinBufferSize(mSampleRate, AudioFormat.CHANNEL_CONFIGURATION_MONO,
+				mAudioFormat); 
+		AudioTrack at = new AudioTrack(AudioManager.STREAM_MUSIC, mSampleRate, AudioFormat.CHANNEL_CONFIGURATION_MONO,
+				mAudioFormat, intSize, AudioTrack.MODE_STREAM); 
+		
+		ObjectInputStream ois;
+		SecretKey key;
+		CipherInputStream cis = null;
+		try {
+			ois = new ObjectInputStream(new FileInputStream(keyFile));
+			DESKeySpec ks = new DESKeySpec((byte[]) ois.readObject());
+			SecretKeyFactory skf = SecretKeyFactory.getInstance("DES");
+			key = skf.generateSecret(ks);
+
+			Cipher c = Cipher.getInstance("DES/CFB8/NoPadding");
+			c.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec((byte[]) ois.readObject()));
+			cis = new CipherInputStream(new FileInputStream(file), c);
+		} catch (IOException | InvalidKeyException | ClassNotFoundException | NoSuchAlgorithmException | InvalidKeySpecException | NoSuchPaddingException | InvalidAlgorithmParameterException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+
+		
+		//Reading the file..
+		byte[] byteData = null; 
+		File file = null; 
+		file = new File(filePath); // for ex. path= "/sdcard/samplesound.pcm" or "/sdcard/samplesound.wav"
+		byte[] audioData = new byte[(int) file.length()];
+		byteData = new byte[mPeriodInFrames*mBitsPersample/8*mNumOfChannels];
+		FileInputStream in = null;
+		try {
+			in = new FileInputStream(file);
+			while(in.read(byteData, 0, byteData.length) != -1) {
+				if (at!=null) { 
+					at.play();
+					// Write the byte array to the track
+					at.write(byteData, 0, byteData.length);
+				} else
+					Log.d("TCAudio", "audio track is not initialised ");
+			}
+			in.close(); 
+			
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		if (at!=null) { 
+			at.stop();
+			at.release();
+		} else
+			Log.d("TCAudio", "audio track is not initialised ");
+	} 
+	
+	/**
+	 * 
+	 * 
+	 *  Releases the resources associated with this class, and removes the unnecessary files, when necessary
+	 *  
+	 */
+	public void release() {
+		if (state == State.RECORDING) {
+			stop();
+		} else {
+			if (state == State.READY){
+				try {
+					mOutputStream.close(); // Remove prepared file
+				} catch (IOException e) {
+					Log.e(PcmAudioRecorder.class.getName(), "I/O exception occured while closing output file");
+				}
+				(new File(filePath)).delete();
+			}
+		}
+		if (audioRecorder != null) {
+			audioRecorder.release();
+		}
+	}
+	
+	/**
+	 * 
+	 * 
+	 * Resets the recorder to the INITIALIZING state, as if it was just created.
+	 * In case the class was in RECORDING state, the recording is stopped.
+	 * In case of exceptions the class is set to the ERROR state.
+	 * 
+	 */
+	public void reset() {
+		try {
+			if (state != State.ERROR) {
+				release();
+				audioRecorder = new AudioRecord(mAudioSource, mSampleRate, mChannelConfig, mAudioFormat, mBufferSize);
+				if (audioRecorder.getState() != AudioRecord.STATE_INITIALIZED) {
+					throw new Exception("AudioRecord initialization failed");
+				}
+				audioRecorder.setRecordPositionUpdateListener(updateListener);
+				audioRecorder.setPositionNotificationPeriod(mPeriodInFrames);
+				state = State.INITIALIZING;
+			}
+		} catch (Exception e) {
+			Log.e(PcmAudioRecorder.class.getName(), e.getMessage());
+			state = State.ERROR;
+		}
+	}
+	
+	/**
+	 * 
+	 * 
+	 *  Stops the recording, and sets the state to STOPPED.
+	 * In case of further usage, a reset is needed.
+	 * Also finalizes the wave file in case of uncompressed recording.
+	 * 
+	 */
+	public void stop() {
+		if (state == State.RECORDING) {
+			audioRecorder.stop();
+			try {
+				mOutputStream.close();
+				oos.writeObject(c.getIV());
+				oos.close();
+			} catch(IOException e) {
+				Log.e(PcmAudioRecorder.class.getName(), "I/O exception occured while closing output file");
+				state = State.ERROR;
+			}
+			state = State.STOPPED;
+		} else {
+			Log.e(PcmAudioRecorder.class.getName(), "stop() called on illegal state");
+			state = State.ERROR;
+		}
+	}
+}
