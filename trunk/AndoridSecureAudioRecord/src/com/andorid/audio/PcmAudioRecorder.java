@@ -4,6 +4,7 @@ import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.security.GeneralSecurityException;
 
 import android.media.AudioFormat;
@@ -17,6 +18,7 @@ import android.util.Log;
 import com.andorid.security.CryptoAESInputStream;
 import com.andorid.security.CryptoAESOutputStream;
 import com.andorid.security.CryptoKeyManager;
+import com.andorid.security.CryptoSHA256;
 
 /**
  * Note: Sample vs Frame
@@ -67,7 +69,7 @@ public class PcmAudioRecorder {
 	// Output file path
 	private String          filePath = null;
 	private static final String AUDIO_RECORDER_FOLDER = "AudioRecorder";
-	private File file;
+	private File fileAudio;
 	
 	// Recorder state; see State
 	private State          	state;
@@ -196,7 +198,7 @@ public class PcmAudioRecorder {
 					dir.mkdirs();
 				}
 				filePath = dir.getPath() + "/" + fname + ".pcm";
-				file = new File(filePath);
+				fileAudio = new File(filePath);
 //				file.createNewFile();
 			}
 		} catch (Exception e) {
@@ -209,7 +211,10 @@ public class PcmAudioRecorder {
 		}
 	}
 	
-
+	protected String getFileName() {
+		return fileAudio.getAbsolutePath();
+	}
+	
 	/**
 	 * 
 	* Prepares the recorder for recording, in case the recorder is not in the INITIALIZING state and the file path was not set
@@ -279,10 +284,10 @@ public class PcmAudioRecorder {
 		AudioTrack at = new AudioTrack(AudioManager.STREAM_MUSIC, mSampleRate, AudioFormat.CHANNEL_CONFIGURATION_MONO,
 				mAudioFormat, intSize, AudioTrack.MODE_STREAM); 
 		
-		CryptoAESInputStream cis = new CryptoAESInputStream(new FileInputStream(file), ckm);
+		CryptoAESInputStream cis = new CryptoAESInputStream(new FileInputStream(fileAudio), ckm);
 		//Reading the file..
 		byte[] byteData = null; 
-		file = new File(filePath); // for ex. path= "/sdcard/samplesound.pcm" or "/sdcard/samplesound.wav"
+		fileAudio = new File(filePath); // for ex. path= "/sdcard/samplesound.pcm" or "/sdcard/samplesound.wav"
 		byteData = new byte[mPeriodInFrames*mBitsPersample/8*mNumOfChannels];
 		while(cis.read(byteData) != -1) {
 			if (at!=null) { 
@@ -364,6 +369,12 @@ public class PcmAudioRecorder {
 			audioRecorder.stop();
 			try {
 				mOutputStream.close();
+				File f = new File(Environment.getExternalStorageDirectory().getPath() 
+						+ "/" + AUDIO_RECORDER_FOLDER + "/SHA-256.txt");
+				PrintWriter out = new PrintWriter(f);
+				out.write(fileAudio.getName() + "\n");
+				out.write(CryptoSHA256.SHA256(fileAudio) + "\n");
+				out.close();
 			} catch(IOException e) {
 				Log.e(PcmAudioRecorder.class.getName(), "I/O exception occured while closing output file");
 				state = State.ERROR;

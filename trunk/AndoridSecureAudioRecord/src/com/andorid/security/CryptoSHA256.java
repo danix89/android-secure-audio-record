@@ -1,6 +1,6 @@
 package com.andorid.security;
 
-import java.io.UnsupportedEncodingException;
+import java.io.File;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -18,10 +18,16 @@ public class CryptoSHA256 {
         return buf.toString();
     }
 
-    public static String SHA256(String text) throws NoSuchAlgorithmException, UnsupportedEncodingException {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-        md.update(text.getBytes("iso-8859-1"), 0, text.length());
-        byte[] sha1hash = md.digest();
+    public static String SHA256(File fileName) {
+    	byte[] sha1hash = null;
+    	try {
+			MessageDigest md = MessageDigest.getInstance("SHA-256");
+			String fs = fileName.toString();
+			md.update(fs.getBytes(), 0, fs.length());
+			sha1hash = md.digest();
+		} catch (NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		}
         return convertToHex(sha1hash);
     }
 }

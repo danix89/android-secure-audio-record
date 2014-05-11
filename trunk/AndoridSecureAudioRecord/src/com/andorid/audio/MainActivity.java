@@ -1,9 +1,13 @@
 package com.andorid.audio;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.ActionBarActivity;
@@ -16,10 +20,13 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.Toast;
 
+import com.andorid.security.CryptoSHA256;
 import com.example.andoridsecureaudiorecord.R;
 
 public class MainActivity extends ActionBarActivity {
-	Button startRec, stopRec, playBack;
+	protected static final String AUDIO_RECORDER_FOLDER = "AudioRecorder";
+	
+	Button startRec, stopRec, playBack, checkSignature;
     Boolean recording;
     
 	private PcmAudioRecorder par;
@@ -32,10 +39,12 @@ public class MainActivity extends ActionBarActivity {
         startRec = (Button)findViewById(R.id.startrec);
         stopRec = (Button)findViewById(R.id.stoprec);
         playBack = (Button)findViewById(R.id.playback);
+        checkSignature = (Button)findViewById(R.id.checksign);
 
         startRec.setOnClickListener(startRecOnClickListener);
         stopRec.setOnClickListener(stopRecOnClickListener);
         playBack.setOnClickListener(playBackOnClickListener);
+        checkSignature.setOnClickListener(checkSignatureOnClickListener);
         
         enableButtons(false);
 	}
@@ -101,6 +110,36 @@ public class MainActivity extends ActionBarActivity {
 			Toast.makeText(MainActivity.this,
 					"Inizio riproduzione", Toast.LENGTH_SHORT).show();
 			playRecordThread.start();
+		}
+	};
+	
+	OnClickListener checkSignatureOnClickListener = new OnClickListener() {
+		@Override
+		public void onClick(View v) {
+			try {
+				FileReader fr = new FileReader(Environment.getExternalStorageDirectory().getPath() 
+						+ "/" + AUDIO_RECORDER_FOLDER + "/SHA-256.txt");
+				BufferedReader br = new BufferedReader(fr);
+				String fname = br.readLine();
+				String fileName = par.getFileName();
+				while(fname.equals(fileName))
+					fname = br.readLine();
+				String correctSHA = br.readLine();
+				br.close();
+				File fileAudio = new File(fileName);
+				String SHA = CryptoSHA256.SHA256(fileAudio);
+				if(correctSHA.equals(SHA))
+					Toast.makeText(MainActivity.this,
+							"La firma del file è corretta", Toast.LENGTH_SHORT).show();
+				else
+					Toast.makeText(MainActivity.this,
+							"Attenzione: la firma del file non coincide con quella del "
+							+ "file audio che si vuole riprodurre", 
+							Toast.LENGTH_SHORT).show();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
 		}
 	};
 
