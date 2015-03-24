@@ -1,0 +1,1 @@
+Sistema per la firma e gestione di registrazione audio sensibili
